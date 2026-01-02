@@ -21,7 +21,14 @@ app.use(express.json());
 const getTrimmedEnv = (key: string) => {
     const raw = process.env[key];
     if (typeof raw !== 'string') return null;
-    const value = raw.trim();
+    let value = raw.trim();
+    if (value.length >= 2) {
+        const first = value[0];
+        const last = value[value.length - 1];
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+            value = value.slice(1, -1).trim();
+        }
+    }
     return value ? value : null;
 };
 
