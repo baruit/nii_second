@@ -8,7 +8,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { promisify } from 'util';
 import axios from 'axios';
-import { DeleteObjectCommand, PutObjectCommand, S3Client, type PutObjectCommandInput } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, type PutObjectCommandInput } from '@aws-sdk/client-s3';
 
 dotenv.config();
 
@@ -631,13 +631,71 @@ app.get('/api/projects', async (_req, res) => {
 app.get('/api/projects/:id/audio', async (req, res) => {
     const { id } = req.params;
     try {
-        const result = await pool.query<{ audio_url: string }>('SELECT audio_url FROM projects WHERE id = $1', [id]);
+        const result = await pool.query<{ audio_url: string; audio_object_key: string | null }>(
+            'SELECT audio_url, audio_object_key FROM projects WHERE id = $1',
+            [id]
+        );
         if (result.rows.length === 0) {
             res.status(404).json({ error: 'Project not found' });
             return;
         }
 
-        const audioUrl = result.rows[0].audio_url;
+        const { audio_url: audioUrl, audio_object_key: audioObjectKey } = result.rows[0];
+
+        if (audioObjectKey && R2_ENABLED && r2Client) {
+            const rangeHeader = req.header('range');
+            const output = await r2Client.send(
+                new GetObjectCommand({
+                    Bucket: R2_BUCKET!,
+                    Key: audioObjectKey,
+                    Range: typeof rangeHeader === 'string' && rangeHeader.length > 0 ? rangeHeader : undefined,
+                })
+            );
+
+            const statusCode = output.$metadata.httpStatusCode || 200;
+            res.status(statusCode);
+
+            if (output.ContentType) res.setHeader('content-type', output.ContentType);
+            if (typeof output.ContentLength === 'number') res.setHeader('content-length', String(output.ContentLength));
+            if (output.AcceptRanges) res.setHeader('accept-ranges', output.AcceptRanges);
+            if (output.ContentRange) res.setHeader('content-range', output.ContentRange);
+            if (output.ETag) res.setHeader('etag', output.ETag);
+            if (output.LastModified instanceof Date) res.setHeader('last-modified', output.LastModified.toUTCString());
+            if (output.CacheControl) res.setHeader('cache-control', output.CacheControl);
+
+            const body = output.Body as unknown;
+            if (!body) {
+                res.status(404).json({ error: 'Audio not found' });
+                return;
+            }
+
+            if (typeof (body as { pipe?: unknown }).pipe === 'function') {
+                const stream = body as unknown as NodeJS.ReadableStream;
+                req.on('close', () => {
+                    try {
+                        (stream as unknown as { destroy?: () => void }).destroy?.();
+                    } catch {
+                        // ignore
+                    }
+                });
+                stream.on('error', (err: unknown) => {
+                    console.error('Audio R2 stream error:', err);
+                    if (!res.headersSent) res.status(502);
+                    res.end();
+                });
+                stream.pipe(res);
+                return;
+            }
+
+            if (typeof (body as { transformToByteArray?: unknown }).transformToByteArray === 'function') {
+                const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+                res.end(Buffer.from(bytes));
+                return;
+            }
+
+            res.status(500).json({ error: 'Unsupported audio stream type' });
+            return;
+        }
 
         if (audioUrl.startsWith('/uploads/')) {
             const audioPath = resolveUploadsPath(audioUrl);
@@ -697,7 +755,15 @@ app.get('/api/projects/:id/audio', async (req, res) => {
 
         upstream.data.pipe(res);
     } catch (err) {
-        console.error('Failed to serve project audio:', err);
+        console.error('Failed to serve project audio:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
+        if (DEBUG_ERRORS_ENABLED) {
+            res.status(500).json({
+                error: 'Failed to fetch audio',
+                details: getErrorInfo(err),
+                config: getPublicRuntimeConfig(),
+            });
+            return;
+        }
         res.status(500).json({ error: 'Failed to fetch audio' });
     }
 });
