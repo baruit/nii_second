@@ -64,7 +64,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
     const audioContextRef = useRef<AudioContext | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-    const zeroGainRef = useRef<GainNode | null>(null);
     const chunksRef = useRef<Float32Array[]>([]);
     const totalLengthRef = useRef(0);
     const sampleRateRef = useRef(44100);
@@ -101,10 +100,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
             const processor = audioContext.createScriptProcessor(4096, 1, 1);
             processorRef.current = processor;
 
-            const zeroGain = audioContext.createGain();
-            zeroGain.gain.value = 0;
-            zeroGainRef.current = zeroGain;
-
             isRecordingRef.current = true;
             processor.onaudioprocess = (e) => {
                 if (!isRecordingRef.current) return;
@@ -113,11 +108,13 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
                 chunk.set(input);
                 chunksRef.current.push(chunk);
                 totalLengthRef.current += chunk.length;
+
+                const output = e.outputBuffer.getChannelData(0);
+                output.fill(0);
             };
 
             source.connect(processor);
-            processor.connect(zeroGain);
-            zeroGain.connect(audioContext.destination);
+            processor.connect(audioContext.destination);
 
             setIsRecording(true);
 
@@ -148,11 +145,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
             }
             try {
                 processorRef.current?.disconnect();
-            } catch {
-                // ignore
-            }
-            try {
-                zeroGainRef.current?.disconnect();
             } catch {
                 // ignore
             }

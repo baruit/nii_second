@@ -114,6 +114,14 @@ const getErrorInfo = (err: unknown) => {
     return { message: String(err) };
 };
 
+const getPublicRuntimeConfig = () => ({
+    r2Enabled: R2_ENABLED,
+    r2Endpoint: R2_ENDPOINT,
+    r2Bucket: R2_BUCKET,
+    r2PublicBaseUrl: R2_PUBLIC_BASE_URL,
+    r2Prefix: R2_PREFIX,
+});
+
 const pool = new Pool({
     user: process.env.POSTGRES_USER || 'postgres',
     host: process.env.POSTGRES_HOST || 'localhost',
@@ -565,7 +573,7 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
         const project = await getProjectWithOwner(insertResult.rows[0].id);
         res.json(project);
     } catch (err) {
-        console.error('Failed to create project:', getErrorInfo(err));
+        console.error('Failed to create project:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
         if (uploadedObjectKey) {
             try {
                 await deleteObjectFromR2(uploadedObjectKey);
@@ -574,7 +582,11 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
             }
         }
         if (DEBUG_ERRORS_ENABLED) {
-            res.status(500).json({ error: 'Failed to create project', details: getErrorInfo(err) });
+            res.status(500).json({
+                error: 'Failed to create project',
+                details: getErrorInfo(err),
+                config: getPublicRuntimeConfig(),
+            });
             return;
         }
         res.status(500).json({ error: 'Failed to create project' });
