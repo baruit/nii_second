@@ -39,6 +39,7 @@ const R2_SECRET_ACCESS_KEY = getTrimmedEnv('R2_SECRET_ACCESS_KEY');
 const R2_BUCKET = getTrimmedEnv('R2_BUCKET');
 const R2_PUBLIC_BASE_URL = getTrimmedEnv('R2_PUBLIC_BASE_URL');
 const R2_PREFIX = getTrimmedEnv('R2_PREFIX');
+const DEBUG_ERRORS_ENABLED = ['1', 'true', 'yes'].includes((getTrimmedEnv('DEBUG_ERRORS') || '').toLowerCase());
 
 const R2_ENABLED = Boolean(R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && R2_PUBLIC_BASE_URL);
 
@@ -87,6 +88,23 @@ const deleteObjectFromR2 = async (objectKey: string) => {
             Key: objectKey,
         })
     );
+};
+
+const getErrorInfo = (err: unknown) => {
+    if (err instanceof Error) {
+        const info: Record<string, unknown> = { name: err.name, message: err.message };
+        const anyErr = err as unknown as Record<string, unknown>;
+        const code = typeof anyErr.code === 'string' ? anyErr.code : typeof anyErr.Code === 'string' ? anyErr.Code : null;
+        if (code) info.code = code;
+        const metadata = anyErr.$metadata as unknown;
+        if (metadata && typeof metadata === 'object') {
+            const m = metadata as Record<string, unknown>;
+            if (typeof m.httpStatusCode === 'number') info.httpStatusCode = m.httpStatusCode;
+            if (typeof m.requestId === 'string') info.requestId = m.requestId;
+        }
+        return info;
+    }
+    return { message: String(err) };
 };
 
 const pool = new Pool({
@@ -540,6 +558,7 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
         const project = await getProjectWithOwner(insertResult.rows[0].id);
         res.json(project);
     } catch (err) {
+        console.error('Failed to create project:', getErrorInfo(err));
         if (uploadedObjectKey) {
             try {
                 await deleteObjectFromR2(uploadedObjectKey);
@@ -547,7 +566,10 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
                 console.error('Failed to cleanup R2 audio object:', cleanupErr);
             }
         }
-        console.error(err);
+        if (DEBUG_ERRORS_ENABLED) {
+            res.status(500).json({ error: 'Failed to create project', details: getErrorInfo(err) });
+            return;
+        }
         res.status(500).json({ error: 'Failed to create project' });
     } finally {
         if (R2_ENABLED && req.file?.path) {

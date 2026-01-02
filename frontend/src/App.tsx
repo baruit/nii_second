@@ -22,6 +22,7 @@ function App() {
     const [view, setView] = useState<View>('list');
     const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [projectsError, setProjectsError] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
 
     const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -56,11 +57,20 @@ function App() {
     }, [view]);
 
     const fetchProjects = async () => {
+        setProjectsError(null);
         try {
             const res = await api.get('/projects');
+            if (!Array.isArray(res.data)) {
+                console.error('Unexpected /projects response:', res.data);
+                setProjects([]);
+                setProjectsError('Backend API misconfigured. Check VITE_API_BASE_URL for the frontend deploy.');
+                return;
+            }
             setProjects(res.data);
         } catch (err) {
             console.error('Failed to fetch projects', err);
+            setProjects([]);
+            setProjectsError('Failed to load projects from backend.');
         }
     };
 
@@ -224,6 +234,12 @@ function App() {
                                 </button>
                             ) : null}
                         </div>
+
+                        {projectsError ? (
+                            <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                                {projectsError}
+                            </div>
+                        ) : null}
 
                         {projects.length === 0 ? (
                             <div className="text-center py-20">
