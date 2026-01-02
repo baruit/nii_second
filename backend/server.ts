@@ -628,6 +628,80 @@ app.get('/api/projects', async (_req, res) => {
     }
 });
 
+app.get('/api/projects/:id/audio', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query<{ audio_url: string }>('SELECT audio_url FROM projects WHERE id = $1', [id]);
+        if (result.rows.length === 0) {
+            res.status(404).json({ error: 'Project not found' });
+            return;
+        }
+
+        const audioUrl = result.rows[0].audio_url;
+
+        if (audioUrl.startsWith('/uploads/')) {
+            const audioPath = resolveUploadsPath(audioUrl);
+            if (!fs.existsSync(audioPath)) {
+                res.status(404).json({ error: 'Audio file not found on server' });
+                return;
+            }
+            res.sendFile(audioPath);
+            return;
+        }
+
+        if (!isHttpUrl(audioUrl)) {
+            res.status(400).json({ error: 'Invalid audio URL' });
+            return;
+        }
+
+        const controller = new AbortController();
+        req.on('close', () => controller.abort());
+
+        const headers: Record<string, string> = {};
+        const range = req.header('range');
+        if (typeof range === 'string' && range.length > 0) headers.Range = range;
+
+        const upstream = await axios.get(audioUrl, {
+            responseType: 'stream',
+            signal: controller.signal,
+            headers,
+            validateStatus: (status) => status >= 200 && status < 500,
+        });
+
+        if (upstream.status >= 400) {
+            res.status(upstream.status).send(upstream.statusText || 'Failed to fetch audio');
+            return;
+        }
+
+        res.status(upstream.status);
+
+        const passthroughHeaders = [
+            'content-type',
+            'content-length',
+            'accept-ranges',
+            'content-range',
+            'etag',
+            'last-modified',
+            'cache-control',
+        ];
+        for (const headerName of passthroughHeaders) {
+            const value = upstream.headers[headerName];
+            if (typeof value === 'string' && value.length > 0) res.setHeader(headerName, value);
+        }
+
+        upstream.data.on('error', (err: unknown) => {
+            console.error('Audio proxy stream error:', err);
+            if (!res.headersSent) res.status(502);
+            res.end();
+        });
+
+        upstream.data.pipe(res);
+    } catch (err) {
+        console.error('Failed to serve project audio:', err);
+        res.status(500).json({ error: 'Failed to fetch audio' });
+    }
+});
+
 app.get('/api/projects/:id', async (req, res) => {
     try {
         const project = await getProjectWithOwner(req.params.id);

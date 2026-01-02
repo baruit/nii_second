@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Wand2, FileText, Music, Loader2, Pencil, Trash2, Check, X } from 'lucide-react';
-import { api } from '../api';
+import { api, getProjectAudioUrl } from '../api';
 import type { AuthUser } from './AuthForm';
 
 interface Project {
@@ -193,7 +193,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                         </h2>
                         <audio
                             controls
-                            src={project.audio_url}
+                            src={getProjectAudioUrl(project.id)}
                             className="w-full"
                         />
                     </div>

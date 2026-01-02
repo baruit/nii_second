@@ -4,7 +4,7 @@ import AudioRecorder from './components/AudioRecorder';
 import ProjectList from './components/ProjectList';
 import ProjectView from './components/ProjectView';
 import AuthForm, { AuthUser } from './components/AuthForm';
-import { api, setAuthToken } from './api';
+import { api, getProjectAudioUrl, setAuthToken } from './api';
 
 type View = 'list' | 'create' | 'detail' | 'auth';
 
@@ -133,7 +133,7 @@ function App() {
         }
 
         setNowPlaying(project);
-        audio.src = project.audio_url;
+        audio.src = getProjectAudioUrl(project.id);
         audio.currentTime = 0;
         audio.play().catch(() => {});
     };
