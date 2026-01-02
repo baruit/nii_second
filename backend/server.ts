@@ -548,6 +548,16 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
             return;
         }
 
+        if (file.size < 512) {
+            try {
+                fs.unlinkSync(file.path);
+            } catch {
+                // ignore
+            }
+            res.status(400).json({ error: 'Audio file is empty' });
+            return;
+        }
+
         let audioUrlToStore = `/uploads/${file.filename}`;
         let audioObjectKeyToStore: string | null = null;
 

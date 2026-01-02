@@ -144,8 +144,18 @@ function App() {
             return;
         }
         setUploading(true);
+        const getFileExtensionFromMimeType = (mimeType: string) => {
+            const normalized = mimeType.split(';')[0]?.trim().toLowerCase();
+            if (normalized === 'audio/wav' || normalized === 'audio/x-wav') return 'wav';
+            if (normalized === 'audio/webm') return 'webm';
+            if (normalized === 'audio/ogg') return 'ogg';
+            if (normalized === 'audio/mpeg') return 'mp3';
+            if (normalized === 'audio/mp4') return 'm4a';
+            return 'wav';
+        };
         const formData = new FormData();
-        formData.append('audio', blob, 'recording.wav');
+        const ext = getFileExtensionFromMimeType(blob.type || '');
+        formData.append('audio', blob, `recording.${ext}`);
         formData.append('name', `Song #${projects.length + 1}`);
 
         try {

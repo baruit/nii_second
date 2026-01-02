@@ -5,16 +5,6 @@ interface AudioRecorderProps {
     onRecordingComplete: (blob: Blob) => void;
 }
 
-const mergeFloat32 = (chunks: Float32Array[], totalLength: number) => {
-    const result = new Float32Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-    }
-    return result;
-};
-
 const writeString = (view: DataView, offset: number, value: string) => {
     for (let i = 0; i < value.length; i += 1) {
         view.setUint8(offset + i, value.charCodeAt(i));
@@ -56,22 +46,86 @@ const encodeWav = (samples: Float32Array, sampleRate: number) => {
     return new Blob([buffer], { type: 'audio/wav' });
 };
 
+const pickSupportedMimeType = () => {
+    if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return null;
+    const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+        'audio/mp4',
+    ];
+    for (const type of candidates) {
+        try {
+            if (MediaRecorder.isTypeSupported(type)) return type;
+        } catch {
+            // ignore
+        }
+    }
+    return null;
+};
+
+const mixToMono = (audioBuffer: AudioBuffer) => {
+    if (audioBuffer.numberOfChannels === 1) {
+        const channel = audioBuffer.getChannelData(0);
+        const copy = new Float32Array(channel.length);
+        copy.set(channel);
+        return copy;
+    }
+
+    const length = audioBuffer.length;
+    const output = new Float32Array(length);
+    for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex += 1) {
+        const channel = audioBuffer.getChannelData(channelIndex);
+        for (let i = 0; i < length; i += 1) {
+            output[i] += channel[i] / audioBuffer.numberOfChannels;
+        }
+    }
+    return output;
+};
+
+const tryConvertToWav = async (blob: Blob) => {
+    const AudioContextConstructor =
+        window.AudioContext ||
+        ((window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext as typeof AudioContext | undefined);
+    if (!AudioContextConstructor) return null;
+
+    const audioContext = new AudioContextConstructor();
+    try {
+        try {
+            await audioContext.resume();
+        } catch {
+            // ignore (decoding does not require running audio)
+        }
+
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        const monoSamples = mixToMono(audioBuffer);
+        const wavBlob = encodeWav(monoSamples, audioBuffer.sampleRate);
+        return wavBlob;
+    } catch (err) {
+        console.error('Failed to convert recording to WAV:', err);
+        return null;
+    } finally {
+        try {
+            await audioContext.close();
+        } catch {
+            // ignore
+        }
+    }
+};
+
 const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
-    const isRecordingRef = useRef(false);
     const streamRef = useRef<MediaStream | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const processorRef = useRef<ScriptProcessorNode | null>(null);
-    const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-    const chunksRef = useRef<Float32Array[]>([]);
-    const totalLengthRef = useRef(0);
-    const sampleRateRef = useRef(44100);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const recordedChunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<number | null>(null);
 
     const startRecording = async () => {
         try {
-            if (!navigator.mediaDevices?.getUserMedia) {
+            if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
                 alert("Your browser does not support audio recording.");
                 return;
             }
@@ -79,58 +133,52 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
 
-            const AudioContextConstructor =
-                window.AudioContext || ((window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext as typeof AudioContext | undefined);
-            if (!AudioContextConstructor) {
-                alert("Your browser does not support AudioContext.");
-                return;
-            }
+            recordedChunksRef.current = [];
 
-            const audioContext = new AudioContextConstructor();
-            await audioContext.resume();
-            audioContextRef.current = audioContext;
-            sampleRateRef.current = audioContext.sampleRate;
+            const mimeType = pickSupportedMimeType();
+            const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+            mediaRecorderRef.current = recorder;
 
-            chunksRef.current = [];
-            totalLengthRef.current = 0;
-
-            const source = audioContext.createMediaStreamSource(stream);
-            sourceRef.current = source;
-
-            const processor = audioContext.createScriptProcessor(4096, 1, 1);
-            processorRef.current = processor;
-
-            isRecordingRef.current = true;
-            processor.onaudioprocess = (e) => {
-                if (!isRecordingRef.current) return;
-                const input = e.inputBuffer.getChannelData(0);
-                const chunk = new Float32Array(input.length);
-                chunk.set(input);
-                chunksRef.current.push(chunk);
-                totalLengthRef.current += chunk.length;
-
-                const output = e.outputBuffer.getChannelData(0);
-                output.fill(0);
+            recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) recordedChunksRef.current.push(event.data);
             };
 
-            source.connect(processor);
-            processor.connect(audioContext.destination);
+            recorder.onstop = async () => {
+                const recordedBlob = new Blob(recordedChunksRef.current, { type: mimeType || recorder.mimeType || '' });
+                recordedChunksRef.current = [];
+
+                streamRef.current?.getTracks().forEach((track) => track.stop());
+                streamRef.current = null;
+                mediaRecorderRef.current = null;
+
+                if (recordedBlob.size < 512) {
+                    alert('Не удалось записать звук. Попробуйте обновить страницу или дать доступ к микрофону заново.');
+                    return;
+                }
+
+                const wavBlob = await tryConvertToWav(recordedBlob);
+                onRecordingComplete(wavBlob || recordedBlob);
+            };
+
+            recorder.start();
 
             setIsRecording(true);
 
             timerRef.current = window.setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime((prev) => prev + 1);
             }, 1000);
-
         } catch (err) {
             console.error("Error accessing microphone:", err);
+            streamRef.current?.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+            mediaRecorderRef.current = null;
+            recordedChunksRef.current = [];
             alert("Could not access microphone. Please ensure permissions are granted.");
         }
     };
 
     const stopRecording = () => {
         if (isRecording) {
-            isRecordingRef.current = false;
             setIsRecording(false);
             if (timerRef.current) {
                 clearInterval(timerRef.current);
@@ -139,30 +187,17 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
             setRecordingTime(0);
 
             try {
-                sourceRef.current?.disconnect();
+                const recorder = mediaRecorderRef.current;
+                if (recorder && recorder.state !== 'inactive') recorder.stop();
+                else {
+                    streamRef.current?.getTracks().forEach((track) => track.stop());
+                    streamRef.current = null;
+                    mediaRecorderRef.current = null;
+                    recordedChunksRef.current = [];
+                }
             } catch {
                 // ignore
             }
-            try {
-                processorRef.current?.disconnect();
-            } catch {
-                // ignore
-            }
-
-            streamRef.current?.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-
-            const audioContext = audioContextRef.current;
-            audioContextRef.current = null;
-            void audioContext?.close();
-
-            const totalLength = totalLengthRef.current;
-            const samples = totalLength > 0 ? mergeFloat32(chunksRef.current, totalLength) : new Float32Array();
-            const wavBlob = encodeWav(samples, sampleRateRef.current);
-            onRecordingComplete(wavBlob);
-
-            chunksRef.current = [];
-            totalLengthRef.current = 0;
         }
     };
 
