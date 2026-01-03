@@ -32,6 +32,14 @@ const getTrimmedEnv = (key: string) => {
     return value ? value : null;
 };
 
+const getRequestBaseUrl = (req: express.Request) => {
+    const rawProto = req.header('x-forwarded-proto') || req.protocol || 'http';
+    const proto = rawProto.split(',')[0]?.trim() || 'http';
+    const host = req.header('x-forwarded-host') || req.header('host');
+    if (!host) return null;
+    return `${proto}://${host}`;
+};
+
 const joinUrl = (base: string, pathPart: string) => {
     const normalizedBase = base.replace(/\/+$/, '');
     const normalizedPath = pathPart.replace(/^\/+/, '');
@@ -48,6 +56,11 @@ const R2_PUBLIC_BASE_URL = getTrimmedEnv('R2_PUBLIC_BASE_URL');
 const R2_PREFIX = getTrimmedEnv('R2_PREFIX');
 const DEBUG_ERRORS_ENABLED = ['1', 'true', 'yes'].includes((getTrimmedEnv('DEBUG_ERRORS') || '').toLowerCase());
 const OPENROUTER_API_KEY = getTrimmedEnv('OPENROUTER_API_KEY');
+const OPENROUTER_SITE_URL = getTrimmedEnv('OPENROUTER_SITE_URL');
+const OPENROUTER_APP_NAME = getTrimmedEnv('OPENROUTER_APP_NAME') || 'Audio Analysis App';
+const OPENROUTER_ANALYSIS_MODEL = getTrimmedEnv('OPENROUTER_ANALYSIS_MODEL') || 'google/gemini-2.5-flash';
+const OPENROUTER_IMAGE_MODEL = getTrimmedEnv('OPENROUTER_IMAGE_MODEL') || 'google/gemini-3-pro-image-preview';
+const ALLOW_MOCK_AI = ['1', 'true', 'yes'].includes((getTrimmedEnv('ALLOW_MOCK_AI') || '').toLowerCase());
 
 const R2_ENABLED = Boolean(R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && R2_PUBLIC_BASE_URL);
 
@@ -115,6 +128,32 @@ const getErrorInfo = (err: unknown) => {
     return { message: String(err) };
 };
 
+const truncateText = (value: string, maxLength = 2000) => {
+    if (value.length <= maxLength) return value;
+    return `${value.slice(0, maxLength)}…`;
+};
+
+const extractErrorMessage = (value: unknown) => {
+    if (!value) return null;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        if (typeof obj.error === 'string') return obj.error;
+        const errorObj = obj.error as unknown;
+        if (errorObj && typeof errorObj === 'object') {
+            const eo = errorObj as Record<string, unknown>;
+            if (typeof eo.message === 'string') return eo.message;
+        }
+        if (typeof obj.message === 'string') return obj.message;
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return null;
+        }
+    }
+    return String(value);
+};
+
 const getPublicRuntimeConfig = () => ({
     r2Enabled: R2_ENABLED,
     r2Endpoint: R2_ENDPOINT,
@@ -122,6 +161,10 @@ const getPublicRuntimeConfig = () => ({
     r2PublicBaseUrl: R2_PUBLIC_BASE_URL,
     r2Prefix: R2_PREFIX,
     openrouterConfigured: Boolean(OPENROUTER_API_KEY),
+    openrouterAnalysisModel: OPENROUTER_ANALYSIS_MODEL,
+    openrouterImageModel: OPENROUTER_IMAGE_MODEL,
+    openrouterSiteUrl: OPENROUTER_SITE_URL,
+    allowMockAi: ALLOW_MOCK_AI,
 });
 
 const pool = new Pool({
@@ -365,6 +408,18 @@ const downloadCoverToStorage = async (sourceUrl: string, projectId: string) => {
     }
 };
 
+const streamToBuffer = (stream: NodeJS.ReadableStream) =>
+    new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        stream.on('data', (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+            else if (chunk instanceof Uint8Array) chunks.push(Buffer.from(chunk));
+            else chunks.push(Buffer.from(String(chunk)));
+        });
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+        stream.on('error', (err) => reject(err));
+    });
+
 const initDb = async () => {
     try {
         await pool.query(`
@@ -538,11 +593,17 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     res.json({ user: req.user });
 });
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', (req, res) => {
+    const requestBaseUrl = getRequestBaseUrl(req);
     res.json({
         ok: true,
         r2Enabled: R2_ENABLED,
         openrouterConfigured: Boolean(OPENROUTER_API_KEY),
+        openrouterAnalysisModel: OPENROUTER_ANALYSIS_MODEL,
+        openrouterImageModel: OPENROUTER_IMAGE_MODEL,
+        openrouterSiteUrl: OPENROUTER_SITE_URL || requestBaseUrl,
+        requestBaseUrl,
+        allowMockAi: ALLOW_MOCK_AI,
         timestamp: new Date().toISOString(),
     });
 });
@@ -894,7 +955,39 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
         let audioFilename: string;
         let mimeType = 'audio/wav';
 
-        if (project.audio_url.startsWith('/uploads/')) {
+        if (project.audio_object_key && R2_ENABLED && r2Client) {
+            const output = await r2Client.send(
+                new GetObjectCommand({
+                    Bucket: R2_BUCKET!,
+                    Key: project.audio_object_key,
+                })
+            );
+
+            const body = output.Body as unknown;
+            if (!body) {
+                res.status(404).json({ error: 'Audio not found' });
+                return;
+            }
+
+            if (typeof output.ContentType === 'string' && output.ContentType.length > 0) {
+                mimeType = output.ContentType.split(';')[0]?.trim() || mimeType;
+            }
+
+            audioFilename = path.basename(project.audio_object_key) || `project-${id}.wav`;
+            if (!mimeType) {
+                mimeType = audioMimeTypeFromExt(path.extname(audioFilename));
+            }
+
+            if (typeof (body as { pipe?: unknown }).pipe === 'function') {
+                audioBuffer = await streamToBuffer(body as unknown as NodeJS.ReadableStream);
+            } else if (typeof (body as { transformToByteArray?: unknown }).transformToByteArray === 'function') {
+                const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+                audioBuffer = Buffer.from(bytes);
+            } else {
+                res.status(500).json({ error: 'Unsupported audio stream type' });
+                return;
+            }
+        } else if (project.audio_url.startsWith('/uploads/')) {
             const audioPath = resolveUploadsPath(project.audio_url);
             if (!fs.existsSync(audioPath)) {
                 res.status(400).json({ error: 'Audio file not found on server' });
@@ -941,6 +1034,10 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
 Пиши ёмко и образно!`;
 
         if (!OPENROUTER_API_KEY) {
+            if (!ALLOW_MOCK_AI) {
+                res.status(503).json({ error: 'OpenRouter is not configured' });
+                return;
+            }
             const mockAnalysis = `ТРАНСКРИПЦИЯ: This is a mock transcription.
 
 ЭМОЦИОНАЛЬНАЯ ПАЛИТРА: Энергичность, драйв, позитив
@@ -961,10 +1058,12 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
             return;
         }
 
+        const openRouterSiteUrl = OPENROUTER_SITE_URL || getRequestBaseUrl(req) || 'http://localhost:3000';
+
         const response = await axios.post(
             'https://openrouter.ai/api/v1/chat/completions',
             {
-                model: 'google/gemini-2.5-flash',
+                model: OPENROUTER_ANALYSIS_MODEL,
                 messages: [
                     {
                         role: 'user',
@@ -985,8 +1084,8 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
                 headers: {
                     Authorization: `Bearer ${OPENROUTER_API_KEY}`,
                     'Content-Type': 'application/json',
-                    'HTTP-Referer': 'http://localhost:3000',
-                    'X-Title': 'Audio Analysis App',
+                    'HTTP-Referer': openRouterSiteUrl,
+                    'X-Title': OPENROUTER_APP_NAME,
                 },
             }
         );
@@ -997,6 +1096,8 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
         res.json(updated);
     } catch (err: any) {
         const status = err?.response?.status as number | undefined;
+        const upstreamMessage = extractErrorMessage(err?.response?.data) || extractErrorMessage(err?.message);
+        const details = upstreamMessage ? truncateText(upstreamMessage) : undefined;
         console.error('Transcription Error:', err.response?.data || err.message);
 
         if (status === 401) {
@@ -1008,7 +1109,7 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
                 });
                 return;
             }
-            res.status(502).json({ error: 'OpenRouter unauthorized' });
+            res.status(502).json({ error: 'OpenRouter unauthorized', details });
             return;
         }
 
@@ -1021,7 +1122,7 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
                 });
                 return;
             }
-            res.status(502).json({ error: 'OpenRouter not found' });
+            res.status(502).json({ error: 'OpenRouter not found', details });
             return;
         }
 
@@ -1049,11 +1150,12 @@ app.post('/api/generate-cover/:id', requireAuth, async (req, res) => {
 
         let coverSourceUrl = '';
         if (OPENROUTER_API_KEY) {
+            const openRouterSiteUrl = OPENROUTER_SITE_URL || getRequestBaseUrl(req) || 'http://localhost:3000';
             try {
                 const imageResponse = await axios.post(
                     'https://openrouter.ai/api/v1/chat/completions',
                     {
-                        model: 'google/gemini-3-pro-image-preview',
+                        model: OPENROUTER_IMAGE_MODEL,
                         modalities: ['text', 'image'],
                         messages: [
                             {
@@ -1066,8 +1168,8 @@ app.post('/api/generate-cover/:id', requireAuth, async (req, res) => {
                         headers: {
                             Authorization: `Bearer ${OPENROUTER_API_KEY}`,
                             'Content-Type': 'application/json',
-                            'HTTP-Referer': 'http://localhost:3000',
-                            'X-Title': 'Audio Analysis App',
+                            'HTTP-Referer': openRouterSiteUrl,
+                            'X-Title': OPENROUTER_APP_NAME,
                         },
                     }
                 );

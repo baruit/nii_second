@@ -56,7 +56,13 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
             setProject(res.data);
         } catch (err) {
             console.error("Transcription failed", err);
-            alert("Transcription failed.");
+            const responseData = (err as { response?: { data?: { error?: string; details?: string } } })?.response?.data;
+            const message = responseData?.error
+                ? responseData.details
+                    ? `${responseData.error}: ${responseData.details}`
+                    : responseData.error
+                : "Transcription failed.";
+            alert(message);
         } finally {
             setTranscribing(false);
         }
@@ -70,7 +76,13 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
             setProject(res.data);
         } catch (err) {
             console.error("Cover generation failed", err);
-            alert("Cover generation failed.");
+            const responseData = (err as { response?: { data?: { error?: string; details?: string } } })?.response?.data;
+            const message = responseData?.error
+                ? responseData.details
+                    ? `${responseData.error}: ${responseData.details}`
+                    : responseData.error
+                : "Cover generation failed.";
+            alert(message);
         } finally {
             setGeneratingCover(false);
         }
