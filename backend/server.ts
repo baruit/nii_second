@@ -294,7 +294,7 @@ app.use(authMiddleware);
 
 const requireAuth: express.RequestHandler = (req, res, next) => {
     if (!req.user) {
-        res.status(401).json({ error: 'Authentication required' });
+        res.status(401).json({ error: 'Требуется авторизация' });
         return;
     }
     next();
@@ -328,10 +328,10 @@ const resolveUploadsPath = (uploadsUrl: string) => {
 
 const requireProjectWriteAccess = async (projectId: string, user: AuthUser) => {
     const result = await pool.query<ProjectRow>('SELECT * FROM projects WHERE id = $1', [projectId]);
-    if (result.rows.length === 0) return { ok: false as const, status: 404 as const, error: 'Project not found' };
+    if (result.rows.length === 0) return { ok: false as const, status: 404 as const, error: 'Проект не найден' };
     const project = result.rows[0] as ProjectRow;
     if (user.role !== 'admin' && project.user_id !== user.id) {
-        return { ok: false as const, status: 403 as const, error: 'Forbidden' };
+        return { ok: false as const, status: 403 as const, error: 'Доступ запрещён' };
     }
     return { ok: true as const, project };
 };
@@ -497,19 +497,19 @@ void initDb();
 
 // Auth
 app.post('/api/auth/register', async (req, res) => {
-    try {
-        const username = normalizeUsername(req.body?.username);
-        const password = validatePassword(req.body?.password);
-        if (!username || !password) {
-            res.status(400).json({ error: 'Invalid username or password' });
-            return;
-        }
+	    try {
+	        const username = normalizeUsername(req.body?.username);
+	        const password = validatePassword(req.body?.password);
+	        if (!username || !password) {
+	            res.status(400).json({ error: 'Неверный логин или пароль' });
+	            return;
+	        }
 
-        const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-        if (existing.rows.length > 0) {
-            res.status(409).json({ error: 'Username already taken' });
-            return;
-        }
+	        const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+	        if (existing.rows.length > 0) {
+	            res.status(409).json({ error: 'Логин уже занят' });
+	            return;
+	        }
 
         const passwordHash = await hashPassword(password);
         const insertResult = await pool.query<AuthUser>(
@@ -528,36 +528,36 @@ app.post('/api/auth/register', async (req, res) => {
         ]);
 
         res.json({ token, user });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to register' });
-    }
-});
+	    } catch (err) {
+	        console.error(err);
+	        res.status(500).json({ error: 'Не удалось зарегистрироваться' });
+	    }
+	});
 
-app.post('/api/auth/login', async (req, res) => {
-    try {
-        const username = normalizeUsername(req.body?.username);
-        const password = validatePassword(req.body?.password);
-        if (!username || !password) {
-            res.status(400).json({ error: 'Invalid username or password' });
-            return;
-        }
+	app.post('/api/auth/login', async (req, res) => {
+	    try {
+	        const username = normalizeUsername(req.body?.username);
+	        const password = validatePassword(req.body?.password);
+	        if (!username || !password) {
+	            res.status(400).json({ error: 'Неверный логин или пароль' });
+	            return;
+	        }
 
         const result = await pool.query<{ id: number; username: string; role: UserRole; password_hash: string }>(
             'SELECT id, username, role, password_hash FROM users WHERE username = $1',
             [username]
-        );
-        if (result.rows.length === 0) {
-            res.status(401).json({ error: 'Invalid username or password' });
-            return;
-        }
+	        );
+	        if (result.rows.length === 0) {
+	            res.status(401).json({ error: 'Неверный логин или пароль' });
+	            return;
+	        }
 
         const row = result.rows[0];
-        const ok = await verifyPassword(password, row.password_hash);
-        if (!ok) {
-            res.status(401).json({ error: 'Invalid username or password' });
-            return;
-        }
+	        const ok = await verifyPassword(password, row.password_hash);
+	        if (!ok) {
+	            res.status(401).json({ error: 'Неверный логин или пароль' });
+	            return;
+	        }
 
         const token = generateSessionToken();
         const tokenHash = hashSessionToken(token);
@@ -570,11 +570,11 @@ app.post('/api/auth/login', async (req, res) => {
 
         const user: AuthUser = { id: row.id, username: row.username, role: row.role };
         res.json({ token, user });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to login' });
-    }
-});
+	    } catch (err) {
+	        console.error(err);
+	        res.status(500).json({ error: 'Не удалось войти' });
+	    }
+	});
 
 app.post('/api/auth/logout', requireAuth, async (req, res) => {
     try {
@@ -583,11 +583,11 @@ app.post('/api/auth/logout', requireAuth, async (req, res) => {
             await pool.query('DELETE FROM sessions WHERE token_hash = $1', [hashSessionToken(token)]);
         }
         res.json({ ok: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to logout' });
-    }
-});
+	    } catch (err) {
+	        console.error(err);
+	        res.status(500).json({ error: 'Не удалось выйти' });
+	    }
+	});
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
     res.json({ user: req.user });
@@ -615,10 +615,10 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
         const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
         const file = req.file;
 
-        if (!file) {
-            res.status(400).json({ error: 'Audio file is required' });
-            return;
-        }
+	        if (!file) {
+	            res.status(400).json({ error: 'Нужен аудиофайл' });
+	            return;
+	        }
 
         if (file.size < 512) {
             try {
@@ -626,9 +626,9 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
             } catch {
                 // ignore
             }
-            res.status(400).json({ error: 'Audio file is empty' });
-            return;
-        }
+	            res.status(400).json({ error: 'Аудиофайл пустой' });
+	            return;
+	        }
 
         let audioUrlToStore = `/uploads/${file.filename}`;
         let audioObjectKeyToStore: string | null = null;
@@ -648,10 +648,10 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
             audioUrlToStore = buildR2PublicUrl(objectKey);
         }
 
-        const insertResult = await pool.query<{ id: number }>(
-            'INSERT INTO projects (name, audio_url, audio_object_key, user_id) VALUES ($1, $2, $3, $4) RETURNING id',
-            [name || 'Untitled Project', audioUrlToStore, audioObjectKeyToStore, req.user!.id]
-        );
+	        const insertResult = await pool.query<{ id: number }>(
+	            'INSERT INTO projects (name, audio_url, audio_object_key, user_id) VALUES ($1, $2, $3, $4) RETURNING id',
+	            [name || 'Без названия', audioUrlToStore, audioObjectKeyToStore, req.user!.id]
+	        );
         const project = await getProjectWithOwner(insertResult.rows[0].id);
         res.json(project);
     } catch (err) {
@@ -663,16 +663,16 @@ app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) 
                 console.error('Failed to cleanup R2 audio object:', cleanupErr);
             }
         }
-        if (DEBUG_ERRORS_ENABLED) {
-            res.status(500).json({
-                error: 'Failed to create project',
-                details: getErrorInfo(err),
-                config: getPublicRuntimeConfig(),
-            });
-            return;
-        }
-        res.status(500).json({ error: 'Failed to create project' });
-    } finally {
+	        if (DEBUG_ERRORS_ENABLED) {
+	            res.status(500).json({
+	                error: 'Не удалось создать проект',
+	                details: getErrorInfo(err),
+	                config: getPublicRuntimeConfig(),
+	            });
+	            return;
+	        }
+	        res.status(500).json({ error: 'Не удалось создать проект' });
+	    } finally {
         if (R2_ENABLED && req.file?.path) {
             try {
                 fs.unlinkSync(req.file.path);
@@ -694,11 +694,11 @@ app.get('/api/projects', async (_req, res) => {
             `
         );
         res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch projects' });
-    }
-});
+	    } catch (err) {
+	        console.error(err);
+	        res.status(500).json({ error: 'Не удалось загрузить проекты' });
+	    }
+	});
 
 app.get('/api/projects/:id/audio', async (req, res) => {
     const { id } = req.params;
@@ -706,11 +706,11 @@ app.get('/api/projects/:id/audio', async (req, res) => {
         const result = await pool.query<{ audio_url: string; audio_object_key: string | null }>(
             'SELECT audio_url, audio_object_key FROM projects WHERE id = $1',
             [id]
-        );
-        if (result.rows.length === 0) {
-            res.status(404).json({ error: 'Project not found' });
-            return;
-        }
+	        );
+	        if (result.rows.length === 0) {
+	            res.status(404).json({ error: 'Проект не найден' });
+	            return;
+	        }
 
         const { audio_url: audioUrl, audio_object_key: audioObjectKey } = result.rows[0];
 
@@ -735,11 +735,11 @@ app.get('/api/projects/:id/audio', async (req, res) => {
             if (output.LastModified instanceof Date) res.setHeader('last-modified', output.LastModified.toUTCString());
             if (output.CacheControl) res.setHeader('cache-control', output.CacheControl);
 
-            const body = output.Body as unknown;
-            if (!body) {
-                res.status(404).json({ error: 'Audio not found' });
-                return;
-            }
+	            const body = output.Body as unknown;
+	            if (!body) {
+	                res.status(404).json({ error: 'Аудио не найдено' });
+	                return;
+	            }
 
             if (typeof (body as { pipe?: unknown }).pipe === 'function') {
                 const stream = body as unknown as NodeJS.ReadableStream;
@@ -765,24 +765,24 @@ app.get('/api/projects/:id/audio', async (req, res) => {
                 return;
             }
 
-            res.status(500).json({ error: 'Unsupported audio stream type' });
-            return;
-        }
+	            res.status(500).json({ error: 'Неподдерживаемый тип аудиопотока' });
+	            return;
+	        }
 
-        if (audioUrl.startsWith('/uploads/')) {
-            const audioPath = resolveUploadsPath(audioUrl);
-            if (!fs.existsSync(audioPath)) {
-                res.status(404).json({ error: 'Audio file not found on server' });
-                return;
-            }
-            res.sendFile(audioPath);
-            return;
-        }
+	        if (audioUrl.startsWith('/uploads/')) {
+	            const audioPath = resolveUploadsPath(audioUrl);
+	            if (!fs.existsSync(audioPath)) {
+	                res.status(404).json({ error: 'Аудиофайл не найден на сервере' });
+	                return;
+	            }
+	            res.sendFile(audioPath);
+	            return;
+	        }
 
-        if (!isHttpUrl(audioUrl)) {
-            res.status(400).json({ error: 'Invalid audio URL' });
-            return;
-        }
+	        if (!isHttpUrl(audioUrl)) {
+	            res.status(400).json({ error: 'Некорректный URL аудио' });
+	            return;
+	        }
 
         const controller = new AbortController();
         req.on('close', () => controller.abort());
@@ -826,19 +826,19 @@ app.get('/api/projects/:id/audio', async (req, res) => {
         });
 
         upstream.data.pipe(res);
-    } catch (err) {
-        console.error('Failed to serve project audio:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
-        if (DEBUG_ERRORS_ENABLED) {
-            res.status(500).json({
-                error: 'Failed to fetch audio',
-                details: getErrorInfo(err),
-                config: getPublicRuntimeConfig(),
-            });
-            return;
-        }
-        res.status(500).json({ error: 'Failed to fetch audio' });
-    }
-});
+	    } catch (err) {
+	        console.error('Failed to serve project audio:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
+	        if (DEBUG_ERRORS_ENABLED) {
+	            res.status(500).json({
+	                error: 'Не удалось получить аудио',
+	                details: getErrorInfo(err),
+	                config: getPublicRuntimeConfig(),
+	            });
+	            return;
+	        }
+	        res.status(500).json({ error: 'Не удалось получить аудио' });
+	    }
+	});
 
 app.get('/api/projects/:id/cover', async (req, res) => {
     const { id } = req.params;
@@ -846,17 +846,17 @@ app.get('/api/projects/:id/cover', async (req, res) => {
         const result = await pool.query<{ cover_url: string | null; cover_object_key: string | null }>(
             'SELECT cover_url, cover_object_key FROM projects WHERE id = $1',
             [id]
-        );
-        if (result.rows.length === 0) {
-            res.status(404).json({ error: 'Project not found' });
-            return;
-        }
+	        );
+	        if (result.rows.length === 0) {
+	            res.status(404).json({ error: 'Проект не найден' });
+	            return;
+	        }
 
-        const { cover_url: coverUrl, cover_object_key: coverObjectKey } = result.rows[0];
-        if (!coverUrl && !coverObjectKey) {
-            res.status(404).json({ error: 'Cover not found' });
-            return;
-        }
+	        const { cover_url: coverUrl, cover_object_key: coverObjectKey } = result.rows[0];
+	        if (!coverUrl && !coverObjectKey) {
+	            res.status(404).json({ error: 'Обложка не найдена' });
+	            return;
+	        }
 
         if (coverObjectKey && R2_ENABLED && r2Client) {
             const rangeHeader = req.header('range');
@@ -879,11 +879,11 @@ app.get('/api/projects/:id/cover', async (req, res) => {
             if (output.LastModified instanceof Date) res.setHeader('last-modified', output.LastModified.toUTCString());
             if (output.CacheControl) res.setHeader('cache-control', output.CacheControl);
 
-            const body = output.Body as unknown;
-            if (!body) {
-                res.status(404).json({ error: 'Cover not found' });
-                return;
-            }
+	            const body = output.Body as unknown;
+	            if (!body) {
+	                res.status(404).json({ error: 'Обложка не найдена' });
+	                return;
+	            }
 
             if (typeof (body as { pipe?: unknown }).pipe === 'function') {
                 const stream = body as unknown as NodeJS.ReadableStream;
@@ -909,19 +909,19 @@ app.get('/api/projects/:id/cover', async (req, res) => {
                 return;
             }
 
-            res.status(500).json({ error: 'Unsupported cover stream type' });
-            return;
-        }
+	            res.status(500).json({ error: 'Неподдерживаемый тип потока обложки' });
+	            return;
+	        }
 
-        if (coverUrl?.startsWith('/uploads/covers/')) {
-            const coverPath = resolveUploadsPath(coverUrl);
-            if (!fs.existsSync(coverPath)) {
-                res.status(404).json({ error: 'Cover file not found on server' });
-                return;
-            }
-            res.sendFile(coverPath);
-            return;
-        }
+	        if (coverUrl?.startsWith('/uploads/covers/')) {
+	            const coverPath = resolveUploadsPath(coverUrl);
+	            if (!fs.existsSync(coverPath)) {
+	                res.status(404).json({ error: 'Файл обложки не найден на сервере' });
+	                return;
+	            }
+	            res.sendFile(coverPath);
+	            return;
+	        }
 
         if (coverUrl && isHttpUrl(coverUrl)) {
             const controller = new AbortController();
@@ -956,32 +956,32 @@ app.get('/api/projects/:id/cover', async (req, res) => {
             return;
         }
 
-        res.status(400).json({ error: 'Invalid cover URL' });
-    } catch (err) {
-        console.error('Failed to serve project cover:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
-        if (DEBUG_ERRORS_ENABLED) {
-            res.status(500).json({
-                error: 'Failed to fetch cover',
-                details: getErrorInfo(err),
-                config: getPublicRuntimeConfig(),
-            });
-            return;
-        }
-        res.status(500).json({ error: 'Failed to fetch cover' });
-    }
-});
+	        res.status(400).json({ error: 'Некорректный URL обложки' });
+	    } catch (err) {
+	        console.error('Failed to serve project cover:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
+	        if (DEBUG_ERRORS_ENABLED) {
+	            res.status(500).json({
+	                error: 'Не удалось получить обложку',
+	                details: getErrorInfo(err),
+	                config: getPublicRuntimeConfig(),
+	            });
+	            return;
+	        }
+	        res.status(500).json({ error: 'Не удалось получить обложку' });
+	    }
+	});
 
 app.get('/api/projects/:id', async (req, res) => {
     try {
         const project = await getProjectWithOwner(req.params.id);
         if (!project) {
-            res.status(404).json({ error: 'Project not found' });
+            res.status(404).json({ error: 'Проект не найден' });
             return;
         }
         res.json(project);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to fetch project' });
+        res.status(500).json({ error: 'Не удалось получить проект' });
     }
 });
 
@@ -989,7 +989,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
     try {
         const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
         if (!name) {
-            res.status(400).json({ error: 'Name is required' });
+            res.status(400).json({ error: 'Название обязательно' });
             return;
         }
 
@@ -1004,7 +1004,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
         res.json(updated);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to update project' });
+        res.status(500).json({ error: 'Не удалось обновить проект' });
     }
 });
 
@@ -1056,7 +1056,7 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
         res.json({ ok: true });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to delete project' });
+        res.status(500).json({ error: 'Не удалось удалить проект' });
     }
 });
 
@@ -1094,11 +1094,11 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
                 })
             );
 
-            const body = output.Body as unknown;
-            if (!body) {
-                res.status(404).json({ error: 'Audio not found' });
-                return;
-            }
+	            const body = output.Body as unknown;
+	            if (!body) {
+	                res.status(404).json({ error: 'Аудио не найдено' });
+	                return;
+	            }
 
             if (typeof output.ContentType === 'string' && output.ContentType.length > 0) {
                 mimeType = output.ContentType.split(';')[0]?.trim() || mimeType;
@@ -1114,16 +1114,16 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
             } else if (typeof (body as { transformToByteArray?: unknown }).transformToByteArray === 'function') {
                 const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
                 audioBuffer = Buffer.from(bytes);
-            } else {
-                res.status(500).json({ error: 'Unsupported audio stream type' });
-                return;
-            }
-        } else if (project.audio_url.startsWith('/uploads/')) {
-            const audioPath = resolveUploadsPath(project.audio_url);
-            if (!fs.existsSync(audioPath)) {
-                res.status(400).json({ error: 'Audio file not found on server' });
-                return;
-            }
+	            } else {
+	                res.status(500).json({ error: 'Неподдерживаемый тип аудиопотока' });
+	                return;
+	            }
+	        } else if (project.audio_url.startsWith('/uploads/')) {
+	            const audioPath = resolveUploadsPath(project.audio_url);
+	            if (!fs.existsSync(audioPath)) {
+	                res.status(400).json({ error: 'Аудиофайл не найден на сервере' });
+	                return;
+	            }
             audioBuffer = fs.readFileSync(audioPath);
             audioFilename = path.basename(audioPath);
             mimeType = audioMimeTypeFromExt(path.extname(audioPath));
@@ -1149,10 +1149,10 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
             } catch {
                 audioFilename = `project-${id}.wav`;
             }
-        } else {
-            res.status(400).json({ error: 'Invalid audio URL' });
-            return;
-        }
+	        } else {
+	            res.status(400).json({ error: 'Некорректный URL аудио' });
+	            return;
+	        }
 
         const audioBase64 = audioBuffer.toString('base64');
 
@@ -1164,11 +1164,11 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
 
 Пиши ёмко и образно!`;
 
-        if (!OPENROUTER_API_KEY) {
-            if (!ALLOW_MOCK_AI) {
-                res.status(503).json({ error: 'OpenRouter is not configured' });
-                return;
-            }
+	        if (!OPENROUTER_API_KEY) {
+	            if (!ALLOW_MOCK_AI) {
+	                res.status(503).json({ error: 'OpenRouter не настроен' });
+	                return;
+	            }
             const mockAnalysis = `ТРАНСКРИПЦИЯ: This is a mock transcription.
 
 ЭМОЦИОНАЛЬНАЯ ПАЛИТРА: Энергичность, драйв, позитив

@@ -63,7 +63,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onModeChange, onSuccess, onCa
                             onChange={(e) => setUsername(e.target.value)}
                             autoComplete="username"
                             className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-800 text-white outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/50"
-                            placeholder="username"
+                            placeholder="Введите логин"
                         />
                     </div>
 
@@ -131,4 +131,3 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onModeChange, onSuccess, onCa
 };
 
 export default AuthForm;
-

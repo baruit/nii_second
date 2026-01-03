@@ -55,13 +55,13 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
             const res = await api.post(`/transcribe/${project.id}`);
             setProject(res.data);
         } catch (err) {
-            console.error("Transcription failed", err);
+            console.error('Не удалось выполнить анализ', err);
             const responseData = (err as { response?: { data?: { error?: string; details?: string } } })?.response?.data;
             const message = responseData?.error
                 ? responseData.details
                     ? `${responseData.error}: ${responseData.details}`
                     : responseData.error
-                : "Transcription failed.";
+                : 'Не удалось выполнить анализ.';
             alert(message);
         } finally {
             setTranscribing(false);
@@ -75,13 +75,13 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
             const res = await api.post(`/generate-cover/${project.id}`);
             setProject(res.data);
         } catch (err) {
-            console.error("Cover generation failed", err);
+            console.error('Не удалось сгенерировать обложку', err);
             const responseData = (err as { response?: { data?: { error?: string; details?: string } } })?.response?.data;
             const message = responseData?.error
                 ? responseData.details
                     ? `${responseData.error}: ${responseData.details}`
                     : responseData.error
-                : "Cover generation failed.";
+                : 'Не удалось сгенерировать обложку.';
             alert(message);
         } finally {
             setGeneratingCover(false);
@@ -89,7 +89,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
     };
 
     if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-cyan-500" /></div>;
-    if (!project) return <div className="text-red-500 p-10">Project not found</div>;
+    if (!project) return <div className="text-red-500 p-10">Проект не найден</div>;
 
     const canEdit =
         !!currentUser && (currentUser.role === 'admin' || (project.user_id != null && project.user_id === currentUser.id));
@@ -133,7 +133,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                 className="flex items-center text-gray-400 hover:text-white mb-6 transition-colors"
             >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Projects
+                Назад к галерее
             </button>
 
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
@@ -149,7 +149,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                                 onClick={saveName}
                                 disabled={savingName}
                                 className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-50"
-                                title="Save"
+                                title="Сохранить"
                             >
                                 <Check className="w-4 h-4" />
                             </button>
@@ -160,7 +160,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                                 }}
                                 disabled={savingName}
                                 className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white disabled:opacity-50"
-                                title="Cancel"
+                                title="Отмена"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -169,7 +169,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                         <h2 className="text-3xl font-bold text-white">{project.name}</h2>
                     )}
                     <div className="text-sm text-gray-400 mt-1">
-                        {project.owner_username ? `by ${project.owner_username}` : null}
+                        {project.owner_username ? `автор: ${project.owner_username}` : null}
                     </div>
                 </div>
 
@@ -181,7 +181,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                             className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center"
                         >
                             <Pencil className="w-4 h-4 mr-2" />
-                            Rename
+                            Переименовать
                         </button>
                         <button
                             onClick={deleteProject}
@@ -189,7 +189,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                             className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center"
                         >
                             <Trash2 className="w-4 h-4 mr-2" />
-                            {deleting ? 'Deleting...' : 'Delete'}
+                            {deleting ? 'Удаляю...' : 'Удалить'}
                         </button>
                     </div>
                 ) : null}
@@ -201,7 +201,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                     <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                         <h2 className="text-xl font-bold text-white mb-4 flex items-center">
                             <Music className="w-5 h-5 mr-2 text-cyan-400" />
-                            Audio Track
+                            Аудио
                         </h2>
                         <audio
                             controls
@@ -270,7 +270,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                             {project.cover_url ? (
                                 <img
                                     src={getProjectCoverUrl(project.id)}
-                                    alt="Cover Art"
+                                    alt="Обложка"
                                     className="w-full h-full object-contain"
                                 />
                             ) : (

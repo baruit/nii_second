@@ -63,14 +63,14 @@ function App() {
             if (!Array.isArray(res.data)) {
                 console.error('Unexpected /projects response:', res.data);
                 setProjects([]);
-                setProjectsError('Backend API misconfigured. Check VITE_API_BASE_URL for the frontend deploy.');
+                setProjectsError('Бэкенд API настроен неправильно. Проверьте адрес API в настройках деплоя фронтенда.');
                 return;
             }
             setProjects(res.data);
         } catch (err) {
             console.error('Failed to fetch projects', err);
             setProjects([]);
-            setProjectsError('Failed to load projects from backend.');
+            setProjectsError('Не удалось загрузить проекты с бэкенда.');
         }
     };
 
@@ -156,7 +156,7 @@ function App() {
         const formData = new FormData();
         const ext = getFileExtensionFromMimeType(blob.type || '');
         formData.append('audio', blob, `recording.${ext}`);
-        formData.append('name', `Song #${projects.length + 1}`);
+        formData.append('name', `Трек #${projects.length + 1}`);
 
         try {
             const res = await api.post('/projects', formData);
@@ -164,7 +164,7 @@ function App() {
             setView('detail');
         } catch (err) {
             console.error('Failed to upload', err);
-            alert('Failed to upload recording');
+            alert('Не удалось загрузить запись.');
         } finally {
             setUploading(false);
         }
@@ -179,7 +179,7 @@ function App() {
                             <Disc className="w-5 h-5 text-white animate-spin-slow" />
                         </div>
                         <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-                            SonicCanvas
+                            ЗвукоХолст
                         </h1>
                     </div>
 
@@ -190,7 +190,7 @@ function App() {
                                 className="flex items-center px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-full text-sm font-medium transition-all hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]"
                             >
                                 <Plus className="w-4 h-4 mr-2" />
-                                New Project
+                                Новый проект
                             </button>
                         ) : null}
 
@@ -200,7 +200,7 @@ function App() {
                                     <span className="font-medium">{user.username}</span>
                                     {user.role === 'admin' ? (
                                         <span className="text-xs text-purple-200 bg-purple-900/40 px-2 py-0.5 rounded-full border border-purple-700/40">
-                                            admin
+                                            админ
                                         </span>
                                     ) : null}
                                 </div>
@@ -294,7 +294,7 @@ function App() {
                             className="flex items-center text-gray-400 hover:text-white mb-6 transition-colors"
                         >
                             <ArrowLeft className="w-4 h-4 mr-2" />
-                            Cancel
+                            Назад
                         </button>
 
                         {!user ? (
@@ -309,12 +309,12 @@ function App() {
                             </div>
                         ) : (
                             <>
-                                <h2 className="text-3xl font-bold mb-8 text-center">Record Your Masterpiece</h2>
+                                <h2 className="text-3xl font-bold mb-8 text-center">Запиши свой шедевр</h2>
 
                                 {uploading ? (
                                     <div className="flex flex-col items-center justify-center py-12">
                                         <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                                        <p className="text-gray-400">Uploading audio...</p>
+                                        <p className="text-gray-400">Загружаю аудио...</p>
                                     </div>
                                 ) : (
                                     <AudioRecorder onRecordingComplete={handleRecordingComplete} />
@@ -358,7 +358,7 @@ function App() {
                         <div className="min-w-0">
                             <div className="text-sm font-semibold text-white truncate">{nowPlaying?.name}</div>
                             {nowPlaying?.owner_username ? (
-                                <div className="text-xs text-gray-400 truncate">by {nowPlaying.owner_username}</div>
+                                <div className="text-xs text-gray-400 truncate">автор: {nowPlaying.owner_username}</div>
                             ) : null}
                         </div>
                     </div>
@@ -378,7 +378,7 @@ function App() {
                         type="button"
                         onClick={stopPlayback}
                         className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition-colors"
-                        aria-label="Close player"
+                        aria-label="Закрыть плеер"
                     >
                         <X className="w-4 h-4" />
                     </button>

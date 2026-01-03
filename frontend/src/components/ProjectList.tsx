@@ -48,7 +48,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ projects, onSelectProject, on
                                     onPlayProject(project);
                                 }}
                                 className="w-16 h-16 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center transition-colors"
-                                aria-label={playingProjectId === project.id ? 'Pause' : 'Play'}
+                                aria-label={playingProjectId === project.id ? 'Пауза' : 'Воспроизвести'}
                             >
                                 {playingProjectId === project.id ? (
                                     <Pause className="w-10 h-10 text-white fill-white" />
@@ -66,7 +66,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ projects, onSelectProject, on
                             {new Date(project.created_at).toLocaleDateString()}
                         </div>
                         {project.owner_username ? (
-                            <div className="text-xs text-gray-500 mt-1">by {project.owner_username}</div>
+                            <div className="text-xs text-gray-500 mt-1">автор: {project.owner_username}</div>
                         ) : null}
                     </div>
                 </div>

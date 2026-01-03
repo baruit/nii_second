@@ -126,7 +126,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
     const startRecording = async () => {
         try {
             if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-                alert("Your browser does not support audio recording.");
+                alert('Ваш браузер не поддерживает запись аудио.');
                 return;
             }
 
@@ -168,12 +168,12 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
                 setRecordingTime((prev) => prev + 1);
             }, 1000);
         } catch (err) {
-            console.error("Error accessing microphone:", err);
+            console.error('Ошибка доступа к микрофону:', err);
             streamRef.current?.getTracks().forEach((track) => track.stop());
             streamRef.current = null;
             mediaRecorderRef.current = null;
             recordedChunksRef.current = [];
-            alert("Could not access microphone. Please ensure permissions are granted.");
+            alert('Не удалось получить доступ к микрофону. Проверьте разрешения в браузере.');
         }
     };
 
@@ -228,7 +228,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
             </button>
 
             <p className="mt-4 text-gray-400 text-sm">
-                {isRecording ? "Recording... Tap to stop" : "Tap to start recording"}
+                {isRecording ? 'Идёт запись… нажмите, чтобы остановить' : 'Нажмите, чтобы начать запись'}
             </p>
         </div>
     );
