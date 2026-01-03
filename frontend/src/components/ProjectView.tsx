@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Wand2, FileText, Music, Loader2, Pencil, Trash2, Check, X } from 'lucide-react';
-import { api, getProjectAudioUrl } from '../api';
+import { api, getProjectAudioUrl, getProjectCoverUrl } from '../api';
 import type { AuthUser } from './AuthForm';
 
 interface Project {
@@ -269,7 +269,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ projectId, currentUser, onBac
                         <div className="flex-1 flex items-center justify-center bg-gray-900 rounded-lg overflow-hidden relative min-h-[400px] max-h-[500px]">
                             {project.cover_url ? (
                                 <img
-                                    src={project.cover_url}
+                                    src={getProjectCoverUrl(project.id)}
                                     alt="Cover Art"
                                     className="w-full h-full object-contain"
                                 />

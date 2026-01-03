@@ -840,6 +840,137 @@ app.get('/api/projects/:id/audio', async (req, res) => {
     }
 });
 
+app.get('/api/projects/:id/cover', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query<{ cover_url: string | null; cover_object_key: string | null }>(
+            'SELECT cover_url, cover_object_key FROM projects WHERE id = $1',
+            [id]
+        );
+        if (result.rows.length === 0) {
+            res.status(404).json({ error: 'Project not found' });
+            return;
+        }
+
+        const { cover_url: coverUrl, cover_object_key: coverObjectKey } = result.rows[0];
+        if (!coverUrl && !coverObjectKey) {
+            res.status(404).json({ error: 'Cover not found' });
+            return;
+        }
+
+        if (coverObjectKey && R2_ENABLED && r2Client) {
+            const rangeHeader = req.header('range');
+            const output = await r2Client.send(
+                new GetObjectCommand({
+                    Bucket: R2_BUCKET!,
+                    Key: coverObjectKey,
+                    Range: typeof rangeHeader === 'string' && rangeHeader.length > 0 ? rangeHeader : undefined,
+                })
+            );
+
+            const statusCode = output.$metadata.httpStatusCode || 200;
+            res.status(statusCode);
+
+            if (output.ContentType) res.setHeader('content-type', output.ContentType);
+            if (typeof output.ContentLength === 'number') res.setHeader('content-length', String(output.ContentLength));
+            if (output.AcceptRanges) res.setHeader('accept-ranges', output.AcceptRanges);
+            if (output.ContentRange) res.setHeader('content-range', output.ContentRange);
+            if (output.ETag) res.setHeader('etag', output.ETag);
+            if (output.LastModified instanceof Date) res.setHeader('last-modified', output.LastModified.toUTCString());
+            if (output.CacheControl) res.setHeader('cache-control', output.CacheControl);
+
+            const body = output.Body as unknown;
+            if (!body) {
+                res.status(404).json({ error: 'Cover not found' });
+                return;
+            }
+
+            if (typeof (body as { pipe?: unknown }).pipe === 'function') {
+                const stream = body as unknown as NodeJS.ReadableStream;
+                req.on('close', () => {
+                    try {
+                        (stream as unknown as { destroy?: () => void }).destroy?.();
+                    } catch {
+                        // ignore
+                    }
+                });
+                stream.on('error', (err: unknown) => {
+                    console.error('Cover R2 stream error:', err);
+                    if (!res.headersSent) res.status(502);
+                    res.end();
+                });
+                stream.pipe(res);
+                return;
+            }
+
+            if (typeof (body as { transformToByteArray?: unknown }).transformToByteArray === 'function') {
+                const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+                res.end(Buffer.from(bytes));
+                return;
+            }
+
+            res.status(500).json({ error: 'Unsupported cover stream type' });
+            return;
+        }
+
+        if (coverUrl?.startsWith('/uploads/covers/')) {
+            const coverPath = resolveUploadsPath(coverUrl);
+            if (!fs.existsSync(coverPath)) {
+                res.status(404).json({ error: 'Cover file not found on server' });
+                return;
+            }
+            res.sendFile(coverPath);
+            return;
+        }
+
+        if (coverUrl && isHttpUrl(coverUrl)) {
+            const controller = new AbortController();
+            req.on('close', () => controller.abort());
+
+            const upstream = await axios.get(coverUrl, {
+                responseType: 'stream',
+                signal: controller.signal,
+                validateStatus: (status) => status >= 200 && status < 500,
+            });
+
+            if (upstream.status >= 400) {
+                res.status(upstream.status).send(upstream.statusText || 'Failed to fetch cover');
+                return;
+            }
+
+            res.status(upstream.status);
+
+            const passthroughHeaders = ['content-type', 'content-length', 'etag', 'last-modified', 'cache-control'];
+            for (const headerName of passthroughHeaders) {
+                const value = upstream.headers[headerName];
+                if (typeof value === 'string' && value.length > 0) res.setHeader(headerName, value);
+            }
+
+            upstream.data.on('error', (err: unknown) => {
+                console.error('Cover proxy stream error:', err);
+                if (!res.headersSent) res.status(502);
+                res.end();
+            });
+
+            upstream.data.pipe(res);
+            return;
+        }
+
+        res.status(400).json({ error: 'Invalid cover URL' });
+    } catch (err) {
+        console.error('Failed to serve project cover:', { ...getErrorInfo(err), ...getPublicRuntimeConfig() });
+        if (DEBUG_ERRORS_ENABLED) {
+            res.status(500).json({
+                error: 'Failed to fetch cover',
+                details: getErrorInfo(err),
+                config: getPublicRuntimeConfig(),
+            });
+            return;
+        }
+        res.status(500).json({ error: 'Failed to fetch cover' });
+    }
+});
+
 app.get('/api/projects/:id', async (req, res) => {
     try {
         const project = await getProjectWithOwner(req.params.id);
@@ -1100,29 +1231,34 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
         const details = upstreamMessage ? truncateText(upstreamMessage) : undefined;
         console.error('Transcription Error:', err.response?.data || err.message);
 
-        if (status === 401) {
-            if (DEBUG_ERRORS_ENABLED) {
-                res.status(502).json({
-                    error: 'OpenRouter unauthorized',
-                    details: err.response?.data || err.message,
-                    config: getPublicRuntimeConfig(),
-                });
-                return;
-            }
-            res.status(502).json({ error: 'OpenRouter unauthorized', details });
+        if (typeof status === 'number') {
+            let error = 'OpenRouter error';
+            if (status === 401) error = 'OpenRouter unauthorized';
+            else if (status === 404) error = 'OpenRouter not found';
+            else if (status === 429) error = 'OpenRouter rate limited';
+            else if (status === 400) error = 'OpenRouter bad request';
+            else if (status >= 500) error = 'OpenRouter upstream error';
+
+            const hint =
+                status === 404
+                    ? 'Check OPENROUTER_ANALYSIS_MODEL and that the model exists / is available for your key.'
+                    : status === 401
+                        ? 'Check OPENROUTER_API_KEY (and that Railway env quoting is handled).'
+                        : status === 400
+                            ? 'The selected model may not support audio/file input. Try a Gemini model that supports audio.'
+                            : undefined;
+
+            const payload: Record<string, unknown> = { error, upstreamStatus: status };
+            if (details) payload.details = details;
+            if (hint) payload.hint = hint;
+            if (DEBUG_ERRORS_ENABLED) payload.config = getPublicRuntimeConfig();
+
+            res.status(502).json(payload);
             return;
         }
 
-        if (status === 404) {
-            if (DEBUG_ERRORS_ENABLED) {
-                res.status(502).json({
-                    error: 'OpenRouter not found',
-                    details: err.response?.data || err.message,
-                    config: getPublicRuntimeConfig(),
-                });
-                return;
-            }
-            res.status(502).json({ error: 'OpenRouter not found', details });
+        if (details) {
+            res.status(500).json({ error: 'Failed to transcribe', details });
             return;
         }
 

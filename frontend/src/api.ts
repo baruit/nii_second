@@ -21,3 +21,4 @@ export const setAuthToken = (token: string | null) => {
 };
 
 export const getProjectAudioUrl = (projectId: number) => joinUrl(API_BASE_URL, `/projects/${projectId}/audio`);
+export const getProjectCoverUrl = (projectId: number) => joinUrl(API_BASE_URL, `/projects/${projectId}/cover`);

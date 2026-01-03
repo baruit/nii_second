@@ -4,7 +4,7 @@ import AudioRecorder from './components/AudioRecorder';
 import ProjectList from './components/ProjectList';
 import ProjectView from './components/ProjectView';
 import AuthForm, { AuthUser } from './components/AuthForm';
-import { api, getProjectAudioUrl, setAuthToken } from './api';
+import { api, getProjectAudioUrl, getProjectCoverUrl, setAuthToken } from './api';
 
 type View = 'list' | 'create' | 'detail' | 'auth';
 
@@ -347,7 +347,7 @@ function App() {
                         <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-800 flex items-center justify-center">
                             {nowPlaying?.cover_url ? (
                                 <img
-                                    src={nowPlaying.cover_url}
+                                    src={getProjectCoverUrl(nowPlaying.id)}
                                     alt={nowPlaying.name}
                                     className="w-full h-full object-cover"
                                 />

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Play, Pause, Music, Calendar } from 'lucide-react';
+import { getProjectCoverUrl } from '../api';
 
 interface Project {
     id: number;
@@ -29,7 +30,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ projects, onSelectProject, on
                     <div className="aspect-square bg-gray-900 relative overflow-hidden">
                         {project.cover_url ? (
                             <img
-                                src={project.cover_url}
+                                src={getProjectCoverUrl(project.id)}
                                 alt={project.name}
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                             />
