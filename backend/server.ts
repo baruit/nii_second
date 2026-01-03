@@ -47,6 +47,7 @@ const R2_BUCKET = getTrimmedEnv('R2_BUCKET');
 const R2_PUBLIC_BASE_URL = getTrimmedEnv('R2_PUBLIC_BASE_URL');
 const R2_PREFIX = getTrimmedEnv('R2_PREFIX');
 const DEBUG_ERRORS_ENABLED = ['1', 'true', 'yes'].includes((getTrimmedEnv('DEBUG_ERRORS') || '').toLowerCase());
+const OPENROUTER_API_KEY = getTrimmedEnv('OPENROUTER_API_KEY');
 
 const R2_ENABLED = Boolean(R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && R2_PUBLIC_BASE_URL);
 
@@ -120,6 +121,7 @@ const getPublicRuntimeConfig = () => ({
     r2Bucket: R2_BUCKET,
     r2PublicBaseUrl: R2_PUBLIC_BASE_URL,
     r2Prefix: R2_PREFIX,
+    openrouterConfigured: Boolean(OPENROUTER_API_KEY),
 });
 
 const pool = new Pool({
@@ -536,6 +538,15 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     res.json({ user: req.user });
 });
 
+app.get('/api/health', (_req, res) => {
+    res.json({
+        ok: true,
+        r2Enabled: R2_ENABLED,
+        openrouterConfigured: Boolean(OPENROUTER_API_KEY),
+        timestamp: new Date().toISOString(),
+    });
+});
+
 // Projects
 app.post('/api/projects', requireAuth, upload.single('audio'), async (req, res) => {
     let uploadedObjectKey: string | null = null;
@@ -929,7 +940,7 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
 
 Пиши ёмко и образно!`;
 
-        if (!process.env.OPENROUTER_API_KEY) {
+        if (!OPENROUTER_API_KEY) {
             const mockAnalysis = `ТРАНСКРИПЦИЯ: This is a mock transcription.
 
 ЭМОЦИОНАЛЬНАЯ ПАЛИТРА: Энергичность, драйв, позитив
@@ -972,7 +983,7 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
             },
             {
                 headers: {
-                    Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    Authorization: `Bearer ${OPENROUTER_API_KEY}`,
                     'Content-Type': 'application/json',
                     'HTTP-Referer': 'http://localhost:3000',
                     'X-Title': 'Audio Analysis App',
@@ -985,27 +996,35 @@ app.post('/api/transcribe/:id', requireAuth, async (req, res) => {
         const updated = await getProjectWithOwner(id);
         res.json(updated);
     } catch (err: any) {
+        const status = err?.response?.status as number | undefined;
         console.error('Transcription Error:', err.response?.data || err.message);
-        if (err.response?.status === 401 || err.response?.status === 404) {
-            const mockAnalysis = `ТРАНСКРИПЦИЯ: This is a mock transcription.
 
-ЭМОЦИОНАЛЬНАЯ ПАЛИТРА: Энергичность, драйв, позитив
-
-ВАЙБ: Современный, молодежный, динамичный
-
-СТИЛЬ: Electronic/Pop
-
-ВИЗУАЛЬНЫЕ АССОЦИАЦИИ: Неоновые огни, ночной город, движение
-
-КОММЕРЧЕСКИЙ ПОТЕНЦИАЛ: Хит в стиле современной электронной музыки`;
-            await pool.query('UPDATE projects SET transcription = $1, emotional_analysis = $1 WHERE id = $2', [
-                mockAnalysis,
-                id,
-            ]);
-            const updated = await getProjectWithOwner(id);
-            res.json(updated);
+        if (status === 401) {
+            if (DEBUG_ERRORS_ENABLED) {
+                res.status(502).json({
+                    error: 'OpenRouter unauthorized',
+                    details: err.response?.data || err.message,
+                    config: getPublicRuntimeConfig(),
+                });
+                return;
+            }
+            res.status(502).json({ error: 'OpenRouter unauthorized' });
             return;
         }
+
+        if (status === 404) {
+            if (DEBUG_ERRORS_ENABLED) {
+                res.status(502).json({
+                    error: 'OpenRouter not found',
+                    details: err.response?.data || err.message,
+                    config: getPublicRuntimeConfig(),
+                });
+                return;
+            }
+            res.status(502).json({ error: 'OpenRouter not found' });
+            return;
+        }
+
         res.status(500).json({ error: 'Failed to transcribe' });
     }
 });
@@ -1029,7 +1048,7 @@ app.post('/api/generate-cover/:id', requireAuth, async (req, res) => {
         const shortPrompt = `Vinyl record cardboard sleeve cover art. Square format, just the cover filling the entire frame, no background, no borders. The artwork shows a vivid scene that captures the song's emotion and style. NO TEXT, NO LETTERS, NO WORDS on the cover. Visual imagery based on: ${analysisText.substring(0, 300)}`;
 
         let coverSourceUrl = '';
-        if (process.env.OPENROUTER_API_KEY) {
+        if (OPENROUTER_API_KEY) {
             try {
                 const imageResponse = await axios.post(
                     'https://openrouter.ai/api/v1/chat/completions',
@@ -1045,7 +1064,7 @@ app.post('/api/generate-cover/:id', requireAuth, async (req, res) => {
                     },
                     {
                         headers: {
-                            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
                             'Content-Type': 'application/json',
                             'HTTP-Referer': 'http://localhost:3000',
                             'X-Title': 'Audio Analysis App',
